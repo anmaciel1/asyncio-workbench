@@ -25,7 +25,7 @@ def compute_lag(intended: float, actual: float) -> float:
 
 @dataclass(frozen=True)
 class Sample:
-    sample      : int    # sample number, to spot gaps
+    sample      : int    # sample number
     intended    : float  # loop.time() we asked to wake at
     actual      : float  # loop.time() we actually woke at
     lag         : float  # actual - intended
