@@ -1,0 +1,13 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# Local-only outputs (never pushed)
+visuals/
+# Raw run artifacts
+results/
+# Generated fixtures (reproducible via scripts/make_flag_config.py)
+data/

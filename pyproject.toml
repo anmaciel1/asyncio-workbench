@@ -1,0 +1,22 @@
+[project]
+name = "workbench"
+version = "0.1.0"
+description = "Measure why an asyncio service slows down: event-loop lag, latency, and controlled experiments."
+readme = "README.md"
+authors = [
+    { name = "Andre Maciel", email = "andreefc23@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
