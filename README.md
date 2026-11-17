@@ -38,6 +38,32 @@ uv run python scripts/heartbeat_demo.py --cpu-n <value printed on first run>
 
 Raw samples and the run configuration are saved to `results/<run_id>/heartbeat.json`.
 
+## Milestone 2: the OpenAI incident in miniature
+
+Each server process runs a background poller that parses the feature-flag
+config every N seconds on the event loop. `scripts/ping_probe.py` sends
+`/ping` at a fixed rate and lines the latencies up with the parses.
+
+```bash
+# terminal 1: 8 processes, all parsing together every 5 s (no jitter)
+WORKBENCH_RUN_DIR=results/sync WORKBENCH_POLL_INTERVAL=5 \
+  uv run uvicorn workbench.app:create_app --factory --loop asyncio --workers 8
+
+# terminal 2
+uv run python scripts/ping_probe.py --run-dir results/sync
+
+# then repeat with jitter (spread each process's parse over 0..5 s)
+WORKBENCH_RUN_DIR=results/jitter WORKBENCH_POLL_INTERVAL=5 WORKBENCH_POLL_JITTER=5 \
+  uv run uvicorn workbench.app:create_app --factory --loop asyncio --workers 8
+uv run python scripts/ping_probe.py --run-dir results/jitter
+```
+
+| Setting | Meaning |
+|---|---|
+| `WORKBENCH_POLL_INTERVAL` | seconds between config parses (unset = poller off) |
+| `WORKBENCH_POLL_JITTER` | random 0..N seconds added to each poll, per process |
+| `WORKBENCH_RUN_DIR` | where `parses.jsonl`, `loop_<pid>.json` and `pings.json` go |
+
 ## Layout
 
 ```

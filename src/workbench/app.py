@@ -11,6 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
 
+from workbench.config_poller import poll_config
 from workbench.flag_config import parse_config, read_config_bytes, write_config
 from workbench.loop_monitor import LoopMonitor
 from workbench.stats import summarize
@@ -29,20 +30,38 @@ class Settings:
     run_dir: Path | None = None
     config_path: Path = ROOT / "data" / "flag_config.json"
     loop_interval: float = 0.01
+    poll_interval: float | None = None  # None = no background config poller
+    poll_jitter: float = 0.0            # random 0..jitter s added to each poll
 
     @classmethod
     def from_env(cls) -> "Settings":
         run_dir = os.environ.get("WORKBENCH_RUN_DIR")
+        poll_interval = os.environ.get("WORKBENCH_POLL_INTERVAL")
         return cls(
             run_dir=Path(run_dir) if run_dir else None,
             config_path=Path(os.environ.get("WORKBENCH_CONFIG", cls.config_path)),
             loop_interval=float(os.environ.get("WORKBENCH_LOOP_INTERVAL", cls.loop_interval)),
+            poll_interval=float(poll_interval) if poll_interval else None,
+            poll_jitter=float(os.environ.get("WORKBENCH_POLL_JITTER", cls.poll_jitter)),
         )
 
 
 def which_process_and_thread() -> dict:
     """Which process and thread is running this code right now."""
     return {"pid": os.getpid(), "thread": threading.current_thread().name}
+
+
+async def cancel_and_wait(task: asyncio.Task) -> None:
+    """Cancel a background task and wait until it has really finished."""
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        # Same rule as LoopMonitor.stop(): only swallow the task's own
+        # cancellation, never a cancellation aimed at the caller.
+        current = asyncio.current_task()
+        if current is not None and current.cancelling():
+            raise
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -64,8 +83,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         monitor = LoopMonitor(interval=settings.loop_interval)
         app.state.monitor = monitor
-        async with monitor:
-            yield  # ---- the server handles requests while we are paused here
+
+        # The OpenAI-style background job: parse the config every N seconds.
+        app.state.parses = []
+        poller = None
+        if settings.poll_interval:
+            log_path = None
+            if settings.run_dir is not None:
+                settings.run_dir.mkdir(parents=True, exist_ok=True)
+                log_path = settings.run_dir / "parses.jsonl"
+            poller = asyncio.create_task(
+                poll_config(settings.config_path, settings.poll_interval,
+                            settings.poll_jitter, app.state.parses, log_path),
+                name="config-poller",
+            )
+
+        try:
+            async with monitor:
+                yield  # ---- the server handles requests while we are paused here
+        finally:
+            if poller is not None:
+                await cancel_and_wait(poller)
         # ---- shutdown: the monitor has been stopped by `async with` -----
         if settings.run_dir is not None:
             save_loop_samples(settings, app.state.clock_ref, monitor)
@@ -106,6 +144,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def loop_summary(request: Request):
         monitor: LoopMonitor = request.app.state.monitor
         return {"interval_s": monitor.interval, "summary": summarize(monitor.samples), **which_process_and_thread()}
+
+    @app.get("/parses")
+    async def recent_parses(request: Request):
+        """The last few background parses done by THIS process."""
+        return {"parses": request.app.state.parses[-10:], **which_process_and_thread()}
 
     return app
 
