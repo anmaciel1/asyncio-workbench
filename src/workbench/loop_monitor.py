@@ -35,10 +35,10 @@ class Sample:
 class LoopMonitor:
     """Records heartbeat samples while running. Use as ``async with``."""
 
-    interval: float = 0.01
-    samples: list[Sample] = field(default_factory=list)
-    pid: int = field(default_factory=os.getpid)
-    _task: asyncio.Task | None = field(default=None, repr=False)
+    interval: float = 0.01 # 10ms
+    samples: list[Sample] = field(default_factory=list) # where all the samples get collected
+    pid: int = field(default_factory=os.getpid) # gets the ID of the process, useful for multi-process system and tracking which process is being tested
+    _task: asyncio.Task | None = field(default=None, repr=False) 
 
     async def _run(self) -> None:
         # loop.time() is a monotonic clock: it never jumps when the wall
@@ -68,8 +68,14 @@ class LoopMonitor:
         try:
             await self._task  # wait for the cancellation to actually finish
         except asyncio.CancelledError:
-            pass
-        self._task = None
+            # The CancelledError we expect is the monitor's own. If the code
+            # *calling* stop() is also being cancelled (e.g. server shutdown),
+            # re-raise so that cancellation is not silently swallowed.
+            current = asyncio.current_task()
+            if current is not None and current.cancelling():
+                raise
+        finally:
+            self._task = None
 
     async def __aenter__(self) -> "LoopMonitor":
         self.start()

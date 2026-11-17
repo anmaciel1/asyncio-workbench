@@ -1,0 +1,128 @@
+import asyncio
+import json
+import os
+import platform
+import sys
+import threading
+import time
+from contextlib import asynccontextmanager
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+from fastapi import FastAPI, Query, Request
+
+from workbench.flag_config import parse_config, read_config_bytes, write_config
+from workbench.loop_monitor import LoopMonitor
+from workbench.stats import summarize
+from workbench.workloads import async_wait, blocking_wait, cpu_work
+
+ROOT = Path(__file__).resolve().parents[2]
+
+# Upper bounds keep every workload input finite: one bad request cannot ask
+# for an hour of sleep or a billion-number prime count.
+MAX_MS = 5_000
+MAX_N = 2_000_000
+
+
+@dataclass(frozen=True)
+class Settings:
+    run_dir: Path | None = None
+    config_path: Path = ROOT / "data" / "flag_config.json"
+    loop_interval: float = 0.01
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        run_dir = os.environ.get("WORKBENCH_RUN_DIR")
+        return cls(
+            run_dir=Path(run_dir) if run_dir else None,
+            config_path=Path(os.environ.get("WORKBENCH_CONFIG", cls.config_path)),
+            loop_interval=float(os.environ.get("WORKBENCH_LOOP_INTERVAL", cls.loop_interval)),
+        )
+
+
+def which_process_and_thread() -> dict:
+    """Which process and thread is running this code right now."""
+    return {"pid": os.getpid(), "thread": threading.current_thread().name}
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # ---- startup: runs once, before the first request ----------------
+        if not settings.config_path.exists():
+            write_config(settings.config_path, num_flags=6_000, seed=0)
+        app.state.config_raw = read_config_bytes(settings.config_path)
+
+        # Two clocks at the same instant: loop.time() is monotonic but only
+        # meaningful inside this process; time.time() is wall clock and can
+        # be compared with the load generator's timestamps.
+        app.state.clock_ref = {
+            "loop_time": asyncio.get_running_loop().time(),
+            "wall_time": time.time(),
+        }
+        monitor = LoopMonitor(interval=settings.loop_interval)
+        app.state.monitor = monitor
+        async with monitor:
+            yield  # ---- the server handles requests while we are paused here
+        # ---- shutdown: the monitor has been stopped by `async with` -----
+        if settings.run_dir is not None:
+            save_loop_samples(settings, app.state.clock_ref, monitor)
+
+    app = FastAPI(title="Asyncio Performance Workbench", lifespan=lifespan)
+
+    @app.get("/ping")
+    async def ping():
+        return {"ok": True, **which_process_and_thread()}
+
+    @app.get("/work/async_wait")
+    async def work_async_wait(ms: float = Query(100, ge=0, le=MAX_MS)):
+        await async_wait(ms / 1000)
+        return {"workload": "async_wait", "ms": ms, **which_process_and_thread()}
+
+    @app.get("/work/blocking_wait")
+    async def work_blocking_wait(ms: float = Query(100, ge=0, le=MAX_MS)):
+        await blocking_wait(ms / 1000)
+        return {"workload": "blocking_wait", "ms": ms, **which_process_and_thread()}
+
+    @app.get("/work/blocking_wait_def")
+    def work_blocking_wait_def(ms: float = Query(100, ge=0, le=MAX_MS)):
+        # Plain `def`: FastAPI runs this in a worker thread, NOT on the loop.
+        time.sleep(ms / 1000)
+        return {"workload": "blocking_wait_def", "ms": ms, **which_process_and_thread()}
+
+    @app.get("/work/cpu")
+    async def work_cpu(n: int = Query(60_000, ge=0, le=MAX_N)):
+        primes = await cpu_work(n)
+        return {"workload": "cpu", "n": n, "primes": primes, **which_process_and_thread()}
+
+    @app.get("/work/json_parse")
+    async def work_json_parse(request: Request):
+        rules = await parse_config(request.app.state.config_raw)
+        return {"workload": "json_parse", "rules": rules, **which_process_and_thread()}
+
+    @app.get("/loop")
+    async def loop_summary(request: Request):
+        monitor: LoopMonitor = request.app.state.monitor
+        return {"interval_s": monitor.interval, "summary": summarize(monitor.samples), **which_process_and_thread()}
+
+    return app
+
+
+def save_loop_samples(settings: Settings, clock_ref: dict, monitor: LoopMonitor) -> Path:
+    settings.run_dir.mkdir(parents=True, exist_ok=True)
+    path = settings.run_dir / f"loop_{monitor.pid}.json"
+    path.write_text(json.dumps({
+        "pid": monitor.pid,
+        "interval_s": monitor.interval,
+        "clock_ref": clock_ref,
+        "environment": {
+            "python": sys.version,
+            "gil_enabled": getattr(sys, "_is_gil_enabled", lambda: True)(),
+            "platform": platform.platform(),
+        },
+        "summary": summarize(monitor.samples),
+        "samples": [asdict(s) for s in monitor.samples],
+    }, indent=2))
+    return path
