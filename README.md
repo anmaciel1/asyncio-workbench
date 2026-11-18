@@ -1,4 +1,7 @@
 # Asyncio Performance Workbench
+<p align="center">
+  <img width="1536" height="1024" alt="frog-asyncio" src="https://github.com/user-attachments/assets/0e2bbff0-5431-4d3f-a769-47de1fa2e426" />
+</p>
 
 A local tool for explaining **why an asynchronous Python service becomes slow**.
 It runs controlled workloads, measures event-loop scheduling delay (lag), and
@@ -114,11 +117,3 @@ scripts/heartbeat_demo.py      Milestone 1 demo
 tests/                         workload correctness, lag math, monitor behavior
 ```
 
-## Roadmap
-
-1. Scheduling demonstration ✅
-2. Instrumented API (FastAPI `/ping` + workload route + loop monitor in lifespan)
-3. Repeatable runner (scenario config, warm-up, artifacts)
-4. First comparison report
-5. Controlled improvements (offloading, admission limits, worker counts)
-6. Portfolio release
