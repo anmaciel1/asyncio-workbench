@@ -1,0 +1,12 @@
+name = "openai-jitter"
+description = "8 workers, config parse, jitter 0-5 s"
+
+[server]
+workers = 8
+poll_interval = 5
+poll_jitter = 5
+
+[load]
+rate = 50
+warmup_s = 5
+measure_s = 30
