@@ -9,11 +9,14 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, Query, Request
+from typing import Literal
+
+from fastapi import FastAPI, Query, Request, Response
 
 from workbench.config_poller import poll_config
 from workbench.flag_config import parse_config, read_config_bytes, write_config
 from workbench.loop_monitor import LoopMonitor
+from workbench.payload import PayloadCache, records_for_kb
 from workbench.stats import summarize
 from workbench.workloads import async_wait, blocking_wait, cpu_work
 
@@ -23,6 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # for an hour of sleep or a billion-number prime count.
 MAX_MS = 5_000
 MAX_N = 2_000_000
+MAX_KB = 50_000  # 50 MB of JSON
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         # The OpenAI-style background job: parse the config every N seconds.
         app.state.parses = []
+        app.state.payloads = PayloadCache()
         poller = None
         if settings.poll_interval:
             log_path = None
@@ -139,6 +144,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def work_json_parse(request: Request):
         rules = await parse_config(request.app.state.config_raw)
         return {"workload": "json_parse", "rules": rules, **which_process_and_thread()}
+
+    @app.get("/work/payload")
+    async def work_payload(
+        request: Request,
+        kb: int = Query(1_000, ge=1, le=MAX_KB),
+        mode: Literal["dict", "dumps", "bytes"] = "dict",
+    ):
+        # Same data three ways; see payload.py. Call each size once first:
+        # the first call builds (and for `bytes`, converts) and caches it.
+        cache: PayloadCache = request.app.state.payloads
+        n = records_for_kb(kb)
+        if mode == "dict":
+            # FastAPI converts this dict to JSON after we return, on the loop.
+            return {"records": cache.get_records(n)}
+        if mode == "dumps":
+            # We convert it ourselves, still on the loop, skipping FastAPI's walk.
+            body = json.dumps({"records": cache.get_records(n)}).encode()
+            return Response(content=body, media_type="application/json")
+        # Converted earlier and cached: only sending is left.
+        return Response(content=cache.get_bytes(n), media_type="application/json")
 
     @app.get("/loop")
     async def loop_summary(request: Request):

@@ -64,6 +64,20 @@ uv run python scripts/ping_probe.py --run-dir results/jitter
 | `WORKBENCH_POLL_JITTER` | random 0..N seconds added to each poll, per process |
 | `WORKBENCH_RUN_DIR` | where `parses.jsonl`, `loop_<pid>.json` and `pings.json` go |
 
+### Large responses: sending vs. converting
+
+`/work/payload?kb=&mode=` returns the same records three ways:
+`dict` (FastAPI converts), `dumps` (we call `json.dumps`), `bytes`
+(converted earlier and cached, so only sending is left). Call each size once
+first: the first call builds and caches the data.
+
+```bash
+F='%{time_total}s\n'
+curl -s -o /dev/null 'localhost:8000/work/payload?kb=5000&mode=dict'   # warm-up
+curl -s -o /dev/null 'localhost:8000/work/payload?kb=5000&mode=dict' & sleep 0.02; \
+  curl -s -o /dev/null -w "ping during payload: $F" localhost:8000/ping
+```
+
 ## Layout
 
 ```

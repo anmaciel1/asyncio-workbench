@@ -12,3 +12,5 @@ visuals/
 results/
 # Generated fixtures (reproducible via scripts/make_flag_config.py)
 data/
+
+tests/

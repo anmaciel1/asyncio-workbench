@@ -53,3 +53,17 @@ def test_shutdown_saves_loop_samples(settings):
     assert data["summary"]["count"] > 0
     assert data["summary"]["max_ms"] >= 40  # the 50 ms block shows up as lag
     assert {"loop_time", "wall_time"} <= data["clock_ref"].keys()
+
+
+@pytest.mark.parametrize("mode", ["dict", "dumps", "bytes"])
+def test_payload_modes_return_the_same_data(client, mode):
+    r = client.get("/work/payload", params={"kb": 100, "mode": mode})
+    assert r.status_code == 200
+    records = r.json()["records"]
+    assert records[0]["id"] == 0
+    assert 80_000 < len(r.content) < 120_000  # roughly 100 KB
+
+
+def test_payload_input_is_bounded(client):
+    assert client.get("/work/payload", params={"kb": 0}).status_code == 422
+    assert client.get("/work/payload", params={"mode": "xml"}).status_code == 422
