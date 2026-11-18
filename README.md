@@ -1,6 +1,6 @@
 # Asyncio Performance Workbench
 <p align="center">
-  <img width="384" height="256" alt="frog-asyncio" src="https://github.com/user-attachments/assets/0e2bbff0-5431-4d3f-a769-47de1fa2e426" />
+  <img width="612" height="408" alt="frog-asyncio-removebg-preview" src="https://github.com/user-attachments/assets/a4ee03ae-91ce-4c24-ab49-0b1ae521947a" />
 </p>
 
 A local tool for explaining **why an asynchronous Python service becomes slow**.
