@@ -18,45 +18,10 @@ then, in another terminal:
 import argparse
 import asyncio
 import json
-import time
 from pathlib import Path
 
-import httpx
-
+from workbench.load import open_loop
 from workbench.stats import percentile
-
-
-async def send(client: httpx.AsyncClient, url: str, planned_wall: float) -> dict:
-    sent_wall = time.time()
-    t0 = time.perf_counter()
-    try:
-        r = await client.get(url)
-        status, pid = r.status_code, r.json().get("pid")
-    except httpx.HTTPError as e:
-        status, pid = type(e).__name__, None
-    return {
-        "planned_wall": planned_wall,
-        "sent_wall": sent_wall,
-        "latency_ms": (time.perf_counter() - t0) * 1000,
-        "status": status,
-        "pid": pid,
-    }
-
-
-async def run(url: str, rate: float, seconds: float) -> list[dict]:
-    loop = asyncio.get_running_loop()
-    # No keep-alive: every ping opens a new connection, and any process that
-    # is free can accept it. (With keep-alive, a connection stays tied to one
-    # process, busy or not.)
-    limits = httpx.Limits(max_keepalive_connections=0)
-    async with httpx.AsyncClient(limits=limits, timeout=10) as client:
-        start_loop, start_wall = loop.time(), time.time()
-        tasks = []
-        for i in range(int(rate * seconds)):
-            offset = i / rate
-            await asyncio.sleep(max(0.0, start_loop + offset - loop.time()))
-            tasks.append(asyncio.create_task(send(client, url, start_wall + offset)))
-        return list(await asyncio.gather(*tasks))
 
 
 def load_parses(run_dir: Path | None, t_start: float, t_end: float) -> list[dict]:
@@ -115,7 +80,7 @@ def main() -> None:
     args = ap.parse_args()
 
     print(f"sending {args.rate:g} pings/s to {args.url} for {args.seconds:g} s ...")
-    pings = asyncio.run(run(args.url, args.rate, args.seconds))
+    pings = asyncio.run(open_loop(args.url, args.rate, args.seconds))
     parses = load_parses(args.run_dir, pings[0]["planned_wall"], pings[-1]["sent_wall"] + 1)
     print_report(pings, parses, args.bucket)
 

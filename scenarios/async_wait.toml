@@ -1,0 +1,15 @@
+name = "async-wait"
+description = "4 requests/s that each wait 100 ms with await asyncio.sleep (hands the loop back)."
+
+[server]
+workers = 1
+
+[load]
+rate = 50
+warmup_s = 3
+measure_s = 20
+
+[workload]
+path = "/work/async_wait"
+params = { ms = 100 }
+rate = 4           # workload requests per second

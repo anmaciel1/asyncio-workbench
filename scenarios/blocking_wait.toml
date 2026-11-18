@@ -1,0 +1,15 @@
+name = "blocking-wait"
+description = "4 requests/s that each block the loop for 100 ms with time.sleep (no CPU used)."
+
+[server]
+workers = 1
+
+[load]
+rate = 50
+warmup_s = 3
+measure_s = 20
+
+[workload]
+path = "/work/blocking_wait"
+params = { ms = 100 }
+rate = 4

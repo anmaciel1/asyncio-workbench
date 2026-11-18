@@ -1,0 +1,10 @@
+name = "baseline"
+description = "No workload: /ping alone. Every other scenario is compared with this one."
+
+[server]
+workers = 1
+
+[load]
+rate = 50          # /ping requests per second
+warmup_s = 3       # sent, then thrown away
+measure_s = 20     # kept

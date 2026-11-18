@@ -1,0 +1,15 @@
+name = "json-parse"
+description = "4 requests/s that each json.loads the 6000-flag config (~100 ms) on the loop."
+
+[server]
+workers = 1
+config_flags = 6000
+
+[load]
+rate = 50
+warmup_s = 3
+measure_s = 20
+
+[workload]
+path = "/work/json_parse"
+rate = 4

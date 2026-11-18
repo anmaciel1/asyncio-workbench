@@ -1,0 +1,15 @@
+name = "data-transfer"
+description = "4 requests/s that each return ~1.6 MB as a dict (FastAPI converts it on the loop, ~100 ms)."
+
+[server]
+workers = 1
+
+[load]
+rate = 50
+warmup_s = 3       # also fills the payload cache, so the first slow build is not measured
+measure_s = 20
+
+[workload]
+path = "/work/payload"
+params = { kb = 1600, mode = "dict" }
+rate = 4

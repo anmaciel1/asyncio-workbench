@@ -78,6 +78,31 @@ curl -s -o /dev/null 'localhost:8000/work/payload?kb=5000&mode=dict' & sleep 0.0
   curl -s -o /dev/null -w "ping during payload: $F" localhost:8000/ping
 ```
 
+## Milestone 3: repeatable runner
+
+One TOML file in `scenarios/` describes one experiment. The runner starts the
+server, waits until it answers, runs a warm-up (thrown away), measures, stops
+the server cleanly and saves everything to `results/<time>_<name>/`.
+
+```bash
+uv run python -m workbench.runner scenarios/cpu_work.toml   # one scenario
+uv run python -m workbench.runner scenarios/*.toml          # all, then a comparison table
+```
+
+| Scenario | Workload (4 requests/s, ~100 ms each) next to `/ping` at 50/s |
+|---|---|
+| `baseline` | none |
+| `async_wait` | `await asyncio.sleep(0.1)` |
+| `blocking_wait` | `time.sleep(0.1)` on the loop |
+| `cpu_work` | count primes, `n=95000` |
+| `json_parse` | `json.loads` of the 6000-flag config |
+| `data_transfer` | ~1.6 MB response returned as a dict |
+| `jitter` | 8 workers, config parse every 5 s with jitter |
+
+Each results folder holds `scenario.toml`, `scenario.json` (with defaults
+filled in), `environment.json` (Python, packages, git commit), and per run:
+`pings.json`, `workload.json`, `loop_<pid>.json`, `server.log`, `summary.json`.
+
 ## Layout
 
 ```

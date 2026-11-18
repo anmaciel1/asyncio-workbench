@@ -1,0 +1,15 @@
+name = "cpu-work"
+description = "4 requests/s that each count primes for ~100 ms on the loop."
+
+[server]
+workers = 1
+
+[load]
+rate = 50
+warmup_s = 3
+measure_s = 20
+
+[workload]
+path = "/work/cpu"
+params = { n = 95000 }   # ~100 ms on this machine
+rate = 4
