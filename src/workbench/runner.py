@@ -26,7 +26,6 @@ import socket
 import subprocess
 import sys
 import time
-from dataclasses import asdict
 from datetime import datetime
 from importlib import metadata
 from pathlib import Path
@@ -272,7 +271,7 @@ def run_scenario(sc: Scenario, source: Path, results_dir: Path, data_dir: Path) 
     base_dir = results_dir / f"{stamp}_{sc.name}"
     base_dir.mkdir(parents=True)
     shutil.copy(source, base_dir / "scenario.toml")                      # exactly what you wrote
-    (base_dir / "scenario.json").write_text(json.dumps(asdict(sc), indent=2))  # with defaults filled in
+    (base_dir / "scenario.json").write_text(sc.model_dump_json(indent=2))  # with defaults filled in
     (base_dir / "environment.json").write_text(json.dumps(environment(), indent=2))
 
     summaries = []
